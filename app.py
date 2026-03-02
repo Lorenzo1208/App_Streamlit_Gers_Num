@@ -602,25 +602,6 @@ st.markdown(f"""
 #         )
 
 # ─────────────────────────────────────────────
-# ALERTES QUALITÉ
-# ─────────────────────────────────────────────
-_aq_full = pd.concat([dfs.get("pub_voiries",  pd.DataFrame()),
-                      dfs.get("priv_voiries", pd.DataFrame())], ignore_index=True)
-if len(_aq_full) > 0:
-    _aq_alerts = []
-    if "domaine" in _aq_full.columns:
-        _m = int(_aq_full["domaine"].isna().sum())
-        if _m: _aq_alerts.append(f"{_m} tronçons sans domaine")
-    if "cm_support" in _aq_full.columns:
-        _m = int(_aq_full["cm_support"].isna().sum())
-        if _m: _aq_alerts.append(f"{_m} tronçons sans support")
-    if "longueur" in _aq_full.columns:
-        _m = int(pd.to_numeric(_aq_full["longueur"], errors="coerce").isna().sum())
-        if _m: _aq_alerts.append(f"{_m} tronçons sans longueur")
-    if _aq_alerts:
-        st.warning(" Données incomplètes : " + " · ".join(_aq_alerts))
-
-# ─────────────────────────────────────────────
 # CARTE INTERACTIVE
 # ─────────────────────────────────────────────
 st.markdown('<div class="section-title">Carte interactive</div>', unsafe_allow_html=True)
@@ -728,11 +709,10 @@ st_folium(m, height=640, use_container_width=True, returned_objects=[])
 # ─────────────────────────────────────────────
 # ONGLETS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "  Détail tronçons",
     "  Répartition par support",
     "  Simulateur RODP",
-    "  Qualité données",
 ])
 
 # ── Onglet 1 : Détail tronçons ───────────────────────────────────────────
@@ -870,105 +850,3 @@ with tab3:
     else:
         st.info("Aucun tronçon public chargé.")
 
-# ── Onglet 4 : Qualité des données ───────────────────────────────────────
-with tab4:
-    st.markdown('<div class="section-title">Audit qualité du réseau FTTH</div>', unsafe_allow_html=True)
-
-    _q_full = pd.concat([dfs.get("pub_voiries",  pd.DataFrame()),
-                         dfs.get("priv_voiries", pd.DataFrame())], ignore_index=True)
-
-    if len(_q_full) > 0:
-        n_total_q = len(_q_full)
-
-        # ── Méthode de classification ──────────────────────────────────
-        if "type_class" in _q_full.columns:
-            tc_vals = _q_full["type_class"].dropna().unique()
-            if len(tc_vals) > 0:
-                st.info(f" Méthode de classification : **{', '.join(tc_vals)}**")
-
-        # ── Indicateurs de complétude ──────────────────────────────────
-        cols_check = {
-            "domaine":    "Domaine (Public/Privé)",
-            "cm_support": "Type de support",
-            "longueur":   "Longueur (m)",
-            "commune":    "Commune",
-            "zanro":      "Zone NRO",
-            "zapm":       "Zone APM",
-        }
-        q_rows = []
-        for col, label in cols_check.items():
-            if col in _q_full.columns:
-                if col == "longueur":
-                    n_ok = int(pd.to_numeric(_q_full[col], errors="coerce").notna().sum())
-                else:
-                    n_ok = int(_q_full[col].notna().sum())
-                n_ko = n_total_q - n_ok
-                pct  = round(100 * n_ok / n_total_q, 1)
-                q_rows.append({"Champ": label, "Renseignés": n_ok, "Manquants": n_ko, "Complétude %": pct})
-        if q_rows:
-            df_q = pd.DataFrame(q_rows)
-            st.dataframe(
-                df_q.style.format({"Complétude %": "{:.1f}%"})
-                          .background_gradient(subset=["Complétude %"], cmap="RdYlGn", vmin=50, vmax=100),
-                use_container_width=True, hide_index=True
-            )
-
-        # ── Tableau croisé support × domaine ──────────────────────────
-        st.markdown('<div class="section-title">Répartition : Type de support × Domaine</div>',
-                    unsafe_allow_html=True)
-        if "cm_support" in _q_full.columns and "domaine" in _q_full.columns:
-            _xt = _q_full.groupby(["cm_support", "domaine"]).agg(
-                Tronçons=("cm_support", "count")
-            ).reset_index()
-            if "longueur" in _q_full.columns:
-                _xt_l = _q_full.groupby(["cm_support", "domaine"])["longueur"].apply(
-                    lambda x: pd.to_numeric(x, errors="coerce").sum()
-                ).reset_index()
-                _xt_l.columns = ["cm_support", "domaine", "Longueur (m)"]
-                _xt = _xt.merge(_xt_l, on=["cm_support", "domaine"])
-                _xt["Longueur (m)"] = _xt["Longueur (m)"].round(1)
-            _xt.rename(columns={"cm_support": "Type de support", "domaine": "Domaine"}, inplace=True)
-            st.dataframe(_xt, use_container_width=True, hide_index=True, height=380)
-
-            # ── Vérification domaine public/privé ─────────────────────
-            EXPECTED_PUBLIC  = [
-                "Souterrain RIP construit", "Souterrain RIP RAF",
-                "Aérien Enedis",  "Aerien Enedis",
-                "Aérien Orange",  "Aerien Orange",
-                "Aérien RIP",     "Aerien RIP",
-                "Chambre",
-                "Aéro-souterrain", "Aero-souterrain", "Aero-souterrain RIP",
-                "Aéro-souterrain Orange", "Aero-souterrain Orange",
-            ]
-            EXPECTED_PRIVATE = [
-                "Façade", "Réseau en parcelle agricole",
-                "Souterrain Orange", "Souterrain Tiers",
-            ]
-            _anom_details = []
-            for _, row in _xt.iterrows():
-                sup, dom = row["Type de support"], row["Domaine"]
-                n_tr = int(row.get("Tronçons", 0))
-                if sup in EXPECTED_PUBLIC and dom != "Public":
-                    _anom_details.append({"support": sup, "domaine": dom, "attendu": "Public",  "n": n_tr})
-                if sup in EXPECTED_PRIVATE and dom == "Public":
-                    _anom_details.append({"support": sup, "domaine": dom, "attendu": "Privé", "n": n_tr})
-
-            if _anom_details:
-                st.warning(f" {len(_anom_details)} anomalie(s) de classification détectée(s)")
-                for _ad in _anom_details:
-                    _label = (f" {_ad['support']} – classé '{_ad['domaine']}' "
-                              f"(attendu : {_ad['attendu']}) · {_ad['n']} tronçons")
-                    with st.expander(_label):
-                        _anom_rows = _q_full[
-                            (_q_full.get("cm_support", pd.Series()) == _ad["support"]) &
-                            (_q_full.get("domaine",    pd.Series()) == _ad["domaine"])
-                        ] if "cm_support" in _q_full.columns and "domaine" in _q_full.columns else pd.DataFrame()
-                        if len(_anom_rows) > 0:
-                            _cols_s = [c for c in ["commune", "domaine", "cm_support", "longueur"]
-                                       if c in _anom_rows.columns]
-                            st.dataframe(_anom_rows[_cols_s].head(100), hide_index=True,
-                                         use_container_width=True)
-            else:
-                st.success(" Aucune anomalie de classification détectée")
-    else:
-        st.info("Aucune donnée chargée")
