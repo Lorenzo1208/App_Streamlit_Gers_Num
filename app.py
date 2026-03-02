@@ -80,7 +80,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     border:1px solid #1e2d4a !important;
     border-left:none !important;
     border-radius:0 8px 8px 0 !important;
-    z-index:999999 !important;
+    /* Removed the extreme z-index to allow Streamlit's native button to capture clicks */
 }
 [data-testid="collapsedControl"] svg { fill:#c8d4e8 !important; }
 section[data-testid="stSidebar"] > div:first-child { padding-top: 1rem !important; }
@@ -616,24 +616,25 @@ st.markdown(f"""
 </div>""", unsafe_allow_html=True)
 
 # ── KPIs longueur par commune ─────────────────────────────────────────────
-if fd_pub is not None and len(fd_pub) > 0 and "commune" in fd_pub.columns:
-    _communes_actives = sorted(fd_pub["commune"].dropna().unique().tolist())
-    if len(_communes_actives) > 1:
-        _len_par_commune = fd_pub.groupby("commune")["longueur"].apply(
-            lambda x: pd.to_numeric(x, errors="coerce").sum()
-        )
-        _cards = ""
-        for _com in _communes_actives:
-            _km = _len_par_comune = _len_par_commune.get(_com, 0)
-            _cards += f'''<div class="kpi-card km"><div class="kpi-label">Long. publique · {_com}</div>
-              <div class="kpi-value km" style="font-size:20px;">{_km:,.0f} m</div>
-              <div class="kpi-sub">{_km/1000:.2f} km</div></div>'''
-        _ncols = len(_communes_actives)
-        st.markdown(
-            f'<div style="display:grid;grid-template-columns:repeat({_ncols},1fr);gap:14px;margin-bottom:16px;">'
-            + _cards + '</div>',
-            unsafe_allow_html=True
-        )
+# Removed individual commune KPI cards (Beaumarche, Samatan lengths) per user request
+# if fd_pub is not None and len(fd_pub) > 0 and "commune" in fd_pub.columns:
+#     _communes_actives = sorted(fd_pub["commune"].dropna().unique().tolist())
+#     if len(_communes_actives) > 1:
+#         _len_par_commune = fd_pub.groupby("commune")["longueur"].apply(
+#             lambda x: pd.to_numeric(x, errors="coerce").sum()
+#         )
+#         _cards = ""
+#         for _com in _communes_actives:
+#             _km = _len_par_comune = _len_par_commune.get(_com, 0)
+#             _cards += f'''<div class="kpi-card km"><div class="kpi-label">Long. publique · {_com}</div>
+#               <div class="kpi-value km" style="font-size:20px;">{_km:,.0f} m</div>
+#               <div class="kpi-sub">{_km/1000:.2f} km</div></div>'''
+#         _ncols = len(_communes_actives)
+#         st.markdown(
+#             f'<div style="display:grid;grid-template-columns:repeat({_ncols},1fr);gap:14px;margin-bottom:16px;">'
+#             + _cards + '</div>',
+#             unsafe_allow_html=True
+#         )
 
 # ─────────────────────────────────────────────
 # ALERTES QUALITÉ
