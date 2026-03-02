@@ -72,17 +72,9 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 [data-testid="stTabs"] button[aria-selected="true"] { color:#5bc4ff !important; border-bottom-color:#5bc4ff !important; }
 #MainMenu, footer { visibility:hidden; }
 [data-testid="stToolbar"]   { display:none !important; }
-[data-testid="stHeader"]    { background:transparent !important; height:0 !important; min-height:0 !important; overflow:visible !important; padding:0 !important; }
+[data-testid="stHeader"]    { background:transparent !important; }
 [data-testid="stDecoration"]{ display:none !important; }
-[data-testid="collapsedControl"] {
-    display:flex !important;
-    background:#0d1220 !important;
-    border:1px solid #1e2d4a !important;
-    border-left:none !important;
-    border-radius:0 8px 8px 0 !important;
-    /* Removed the extreme z-index to allow Streamlit's native button to capture clicks */
-}
-[data-testid="collapsedControl"] svg { fill:#c8d4e8 !important; }
+[data-testid="stSidebarCollapseButton"] { display:none !important; }
 section[data-testid="stSidebar"] > div:first-child { padding-top: 1rem !important; }
 ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-track { background:#0a0e1a; }
 ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
