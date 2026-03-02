@@ -526,34 +526,7 @@ with st.sidebar:
                     'border-radius:8px;padding:10px;font-size:11px;color:#aaa830;">'
                     ' Mode démo</div>', unsafe_allow_html=True)
 
-    # ── Export ────────────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Télécharger</div>', unsafe_allow_html=True)
-    _df_pub_exp  = dfs.get("pub_voiries",  pd.DataFrame())
-    _df_priv_exp = dfs.get("priv_voiries", pd.DataFrame())
-    _full_export = pd.concat([_df_pub_exp, _df_priv_exp], ignore_index=True)
-    if len(_full_export) > 0:
-        _csv = _full_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-        st.download_button(" CSV – tous tronçons", _csv, "rodp_troncons.csv",
-                           "text/csv", use_container_width=True)
-        try:
-            import io as _io
-            _buf = _io.BytesIO()
-            with pd.ExcelWriter(_buf, engine="openpyxl") as _w:
-                _full_export.to_excel(_w, sheet_name="Tous tronçons", index=False)
-                if "commune" in _df_pub_exp.columns and "longueur" in _df_pub_exp.columns and len(_df_pub_exp) > 0:
-                    _sc = _df_pub_exp.groupby("commune")["longueur"].apply(
-                        lambda x: pd.to_numeric(x, errors="coerce").sum()
-                    ).reset_index()
-                    _sc.columns = ["Commune", "Longueur_pub_m"]
-                    _sc.to_excel(_w, sheet_name="Synthèse RODP", index=False)
-            st.download_button(" Excel (avec synthèse)", _buf.getvalue(),
-                               "rodp_troncons.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               use_container_width=True)
-        except Exception as _xe:
-            st.caption(f"Excel : {_xe}")
-    else:
-        st.caption("Aucune donnée chargée")
+
 
 
 # ─────────────────────────────────────────────
