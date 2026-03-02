@@ -72,8 +72,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 [data-testid="stTabs"] button[aria-selected="true"] { color:#5bc4ff !important; border-bottom-color:#5bc4ff !important; }
 #MainMenu, footer { visibility:hidden; }
 [data-testid="stToolbar"]   { display:none !important; }
-[data-testid="stHeader"]    { display:none !important; height:0 !important; }
+[data-testid="stHeader"]    { background:transparent !important; height:0 !important; min-height:0 !important; overflow:visible !important; padding:0 !important; }
 [data-testid="stDecoration"]{ display:none !important; }
+[data-testid="collapsedControl"] {
+    display:flex !important;
+    background:#0d1220 !important;
+    border:1px solid #1e2d4a !important;
+    border-left:none !important;
+    border-radius:0 8px 8px 0 !important;
+    z-index:999999 !important;
+}
+[data-testid="collapsedControl"] svg { fill:#c8d4e8 !important; }
 section[data-testid="stSidebar"] > div:first-child { padding-top: 1rem !important; }
 ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-track { background:#0a0e1a; }
 ::-webkit-scrollbar-thumb { background:#1e3a5f; border-radius:3px; }
@@ -322,11 +331,18 @@ def _load_shp(path, default_domaine, commune_name):
         g = gpd.read_file(path)
         if len(g) == 0:
             return None
+        # Calculer la longueur réelle depuis la géométrie en Lambert-93
+        # AVANT la reprojection — c'est la valeur correcte pour la RODP
+        # (cm_long hérite de la longueur du tronçon parent avant découpe cadastrale → incorrect)
+        if g.crs and g.crs.to_epsg() == 2154:
+            g["longueur"] = g.geometry.length.round(2)
+        elif g.crs:
+            g["longueur"] = g.to_crs(epsg=2154).geometry.length.round(2)
+        else:
+            g["longueur"] = g.geometry.length.round(2)
+        # Reprojeter pour l'affichage
         if g.crs and g.crs.to_epsg() != 4326:
             g = g.to_crs(epsg=4326)
-        # Normaliser la longueur
-        if "cm_long" in g.columns and "longueur" not in g.columns:
-            g = g.rename(columns={"cm_long": "longueur"})
         # Injecter domaine et commune si absents
         if "domaine" not in g.columns:
             g["domaine"] = default_domaine
@@ -566,22 +582,14 @@ n_priv  = len(fj_priv["features"]) if fj_priv else 0
 n_total = n_pub + n_priv
 
 
-def _sum_length(df, gdf_orig):
-    if df is not None and len(df) > 0:
-        if "longueur" in df.columns:
-            val = pd.to_numeric(df["longueur"], errors="coerce").sum()
-            if val > 0:
-                return val
-    if gdf_orig is not None and len(gdf_orig) > 0:
-        try:
-            return gdf_orig.to_crs(epsg=2154).geometry.length.sum()
-        except Exception:
-            pass
+def _sum_length(df):
+    if df is not None and len(df) > 0 and "longueur" in df.columns:
+        return pd.to_numeric(df["longueur"], errors="coerce").sum()
     return 0.0
 
 
-km_pub  = _sum_length(fd_pub,  gdfs.get("pub_voiries"))
-km_priv = _sum_length(fd_priv, gdfs.get("priv_voiries"))
+km_pub  = _sum_length(fd_pub)
+km_priv = _sum_length(fd_priv)
 
 # ─────────────────────────────────────────────
 # HEADER + KPIs
@@ -603,9 +611,29 @@ st.markdown(f"""
     <div class="kpi-value pub">{n_pub:,}</div><div class="kpi-sub">tronçons soumis RODP</div></div>
   <div class="kpi-card priv"><div class="kpi-label">Domaine privé</div>
     <div class="kpi-value priv">{n_priv:,}</div><div class="kpi-sub">tronçons hors RODP</div></div>
-  <div class="kpi-card km"><div class="kpi-label">Longueur publique</div>
+  <div class="kpi-card km"><div class="kpi-label">Longueur publique totale</div>
     <div class="kpi-value km">{km_pub:,.0f} m</div><div class="kpi-sub">linéaire soumis à redevance</div></div>
 </div>""", unsafe_allow_html=True)
+
+# ── KPIs longueur par commune ─────────────────────────────────────────────
+if fd_pub is not None and len(fd_pub) > 0 and "commune" in fd_pub.columns:
+    _communes_actives = sorted(fd_pub["commune"].dropna().unique().tolist())
+    if len(_communes_actives) > 1:
+        _len_par_commune = fd_pub.groupby("commune")["longueur"].apply(
+            lambda x: pd.to_numeric(x, errors="coerce").sum()
+        )
+        _cards = ""
+        for _com in _communes_actives:
+            _km = _len_par_comune = _len_par_commune.get(_com, 0)
+            _cards += f'''<div class="kpi-card km"><div class="kpi-label">Long. publique · {_com}</div>
+              <div class="kpi-value km" style="font-size:20px;">{_km:,.0f} m</div>
+              <div class="kpi-sub">{_km/1000:.2f} km</div></div>'''
+        _ncols = len(_communes_actives)
+        st.markdown(
+            f'<div style="display:grid;grid-template-columns:repeat({_ncols},1fr);gap:14px;margin-bottom:16px;">'
+            + _cards + '</div>',
+            unsafe_allow_html=True
+        )
 
 # ─────────────────────────────────────────────
 # ALERTES QUALITÉ
@@ -821,18 +849,11 @@ with tab3:
             actualisés au 1<sup>er</sup> janvier de chaque année selon l'index des travaux publics (TP01).
         </div>""", unsafe_allow_html=True)
 
-    df_pub_r  = dfs.get("pub_voiries", pd.DataFrame())
-    gdf_pub_r = gdfs.get("pub_voiries")
+    df_pub_r = dfs.get("pub_voiries", pd.DataFrame())
 
     if len(df_pub_r) > 0 and "commune" in df_pub_r.columns:
         _lr = df_pub_r[["commune"]].copy().reset_index(drop=True)
-        if "longueur" in df_pub_r.columns and pd.to_numeric(df_pub_r["longueur"], errors="coerce").sum() > 0:
-            _lr["_len"] = pd.to_numeric(df_pub_r["longueur"], errors="coerce").values
-        elif gdf_pub_r is not None:
-            st.caption(" Longueur calculée depuis la géométrie")
-            _lr["_len"] = gdf_pub_r.to_crs(epsg=2154).geometry.length.reset_index(drop=True).values
-        else:
-            _lr["_len"] = 0.0
+        _lr["_len"] = pd.to_numeric(df_pub_r["longueur"], errors="coerce").fillna(0).values
 
         by_c = _lr.groupby("commune")["_len"].sum().reset_index()
         by_c.columns = ["Commune", "Longueur pub (m)"]
