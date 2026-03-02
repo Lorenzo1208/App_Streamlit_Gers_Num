@@ -1,9 +1,4 @@
-# Gros fichiers cadastraux (> 100 MB — exclus de GitHub)
-classif cadastre/classif cadastre/couche cadastre/parcelles.shp
-classif cadastre/classif cadastre/couche cadastre/parcelles.dbf
-classif cadastre/classif cadastre/couche cadastre/parcelles.shx
-classif cadastre/classif cadastre/couche cadastre/parcelles.prj
-classif cadastre/classif cadastre/couche cadastre/parcelles.cpg
+
 
 # Python
 __pycache__/
