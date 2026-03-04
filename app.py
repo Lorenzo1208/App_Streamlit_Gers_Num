@@ -36,21 +36,21 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 .block-container { padding: 1rem 1.5rem !important; max-width: 100% !important; }
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 .kpi-card {
-    background: linear-gradient(135deg, #111827 0%, #0d1a2e 100%);
+    background: linear-gradient(135deg, #0a1628 0%, #0d2145 50%, #0a1628 100%);
     border: 1px solid #1e3a5f; border-radius: 12px; padding: 16px 20px;
     position: relative; overflow: hidden;
 }
 .kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#0066cc,#00c4ff); }
 .kpi-card.pub::before   { background: linear-gradient(90deg, #0066cc, #00c4ff); }
-.kpi-card.priv::before  { background: linear-gradient(90deg, #e85d04, #ff9500); }
-.kpi-card.total::before { background: linear-gradient(90deg, #6e40c9, #a78bfa); }
-.kpi-card.km::before    { background: linear-gradient(90deg, #059669, #34d399); }
+.kpi-card.priv::before  { background: linear-gradient(90deg, #0066cc, #00c4ff); }
+.kpi-card.total::before { background: linear-gradient(90deg, #0066cc, #00c4ff); }
+.kpi-card.km::before    { background: linear-gradient(90deg, #0066cc, #00c4ff); }
 .kpi-label { font-size:10px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#5a7fa8; margin-bottom:6px; }
 .kpi-value { font-size:26px; font-weight:900; font-family:'JetBrains Mono',monospace !important; line-height:1; }
 .kpi-value.pub   { color: #5bc4ff; }
-.kpi-value.priv  { color: #ffaa4a; }
-.kpi-value.total { color: #c4b5fd; }
-.kpi-value.km    { color: #6ee7b7; }
+.kpi-value.priv  { color: #5bc4ff; }
+.kpi-value.total { color: #5bc4ff; }
+.kpi-value.km    { color: #5bc4ff; }
 .kpi-sub { font-size:11px; color:#3d6e9e; margin-top:3px; }
 .section-title {
     font-size:10px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase;
@@ -399,15 +399,43 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_data(show_spinner="Chargement couche voiries…")
 def load_voiries_gj():
-    path = os.path.join(_APP_DIR, "Couche_voiries", "voiries_clean.shp")
-    if not os.path.exists(path):
+    paths = [
+        os.path.join(_APP_DIR, "Couche_voiries", "Commune beaumarche", "polygones_routes_beaumarché.shp"),
+        os.path.join(_APP_DIR, "Couche_voiries", "Commune samatan", "polygone_routes_samatan.shp")
+    ]
+    gdfs = []
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                gdf = gpd.read_file(path)
+                if gdf.crs and gdf.crs.to_epsg() != 4326:
+                    gdf = gdf.to_crs(epsg=4326)
+                gdf["geometry"] = gdf["geometry"].simplify(0.00005, preserve_topology=True)
+                gdfs.append(gdf)
+            except Exception as e:
+                pass
+    if not gdfs:
         return None
     try:
-        gdf = gpd.read_file(path)
-        if gdf.crs and gdf.crs.to_epsg() != 4326:
-            gdf = gdf.to_crs(epsg=4326)
-        gdf["geometry"] = gdf["geometry"].simplify(0.00005, preserve_topology=True)
-        return gdf[["NATURE", "Gestionnai", "geometry"]].__geo_interface__
+        combined = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
+        
+        # Dissoudre les polygones par attributs pour éviter la superposition visuelle
+        dissolve_cols = [c for c in ["NATURE", "Gestionnai", "NOM", "nom", "COMMUNE", "commune"] if c in combined.columns]
+        if dissolve_cols:
+            for c in dissolve_cols:
+                combined[c] = combined[c].fillna("Inconnu")
+            combined = combined.dissolve(by=dissolve_cols, as_index=False)
+            
+        for col in combined.columns:
+            if col != "geometry":
+                try:
+                    if pd.api.types.is_datetime64_any_dtype(combined[col]):
+                        combined[col] = combined[col].astype(str)
+                    elif combined[col].dtype == object:
+                        combined[col] = combined[col].astype(str).replace("nan", "-")
+                except Exception:
+                    combined[col] = combined[col].astype(str)
+        return combined.__geo_interface__
     except Exception as e:
         return None
 
@@ -497,6 +525,7 @@ with st.sidebar:
 
     st.markdown('<div class="section-title">Couches</div>', unsafe_allow_html=True)
     show_voiries = st.checkbox("Couche voiries",    value=True)
+    show_fibre   = st.checkbox("Couche fibre",      value=True)
     show_cad     = st.checkbox("Couche cadastrale", value=False)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
@@ -593,8 +622,8 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 # FILTRES
 # ─────────────────────────────────────────────
-show_pub  = show_voiries
-show_priv = show_voiries
+show_pub  = show_fibre
+show_priv = show_fibre
 fj_pub  = fast_filter_gj(gjs.get("pub_voiries"),  show_pub,  sel_dom, sel_sup, sel_commune)
 fj_priv = fast_filter_gj(gjs.get("priv_voiries"), show_priv, sel_dom, sel_sup, sel_commune)
 fj_cad  = gjs.get("cadastre") if show_cad else None
@@ -749,12 +778,28 @@ def add_voiries_layer(gj, sel_gest, sel_nature):
         return
     gest_set   = set(sel_gest)
     nature_set = set(sel_nature)
-    feats = [f for f in gj["features"]
-             if (not gest_set   or f["properties"].get("Gestionnai") in gest_set)
-             and (not nature_set or f["properties"].get("NATURE")     in nature_set)]
+    
+    feats = []
+    for f in gj["features"]:
+        p = f["properties"]
+        if "Gestionnai" in p and gest_set and p["Gestionnai"] not in gest_set:
+            continue
+        if "NATURE" in p and nature_set and p["NATURE"] not in nature_set:
+            continue
+        feats.append(f)
+        
     if not feats:
         return
     filtered_gj = {"type": "FeatureCollection", "features": feats}
+    
+    sample = feats[0]["properties"]
+    tt_fields = []
+    tt_aliases = []
+    for k in ["NATURE", "Gestionnai", "NOM", "nom", "COMMUNE", "commune"]:
+        if k in sample:
+            tt_fields.append(k)
+            tt_aliases.append(f"{k} :")
+            
     GeoJson(
         filtered_gj, name="Couche voiries",
         style_function=lambda f: {
@@ -765,10 +810,10 @@ def add_voiries_layer(gj, sel_gest, sel_nature):
             "opacity":     0.6,
         },
         tooltip=GeoJsonTooltip(
-            fields=["NATURE", "Gestionnai"],
-            aliases=["Nature :", "Gestionnaire :"],
+            fields=tt_fields,
+            aliases=tt_aliases,
             localize=True, sticky=False, labels=True, style=TT_STYLE
-        ),
+        ) if tt_fields else None,
     ).add_to(m)
 
 
