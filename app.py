@@ -395,26 +395,28 @@ def _demo():
 # ─────────────────────────────────────────────
 # CHARGEMENT DONNÉES RODP (classification voiries)
 # ─────────────────────────────────────────────
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @st.cache_data(show_spinner="Chargement des données RODP…")
 def load_rodp_data():
     """
-    Charge le shapefile résultat de la classification par voiries.
+    Charge les attributs du shapefile RODP (sans géométries).
     Corrige les noms de colonnes tronqués par ESRI Shapefile (>10 chars).
     """
-    path = os.path.join("result", "troncons_classes_voiries.shp")
+    path = os.path.join(_APP_DIR, "result", "troncons_classes_voiries.shp")
     if not os.path.exists(path):
         return None
     try:
         gdf = gpd.read_file(path)
-        # Renommer les colonnes tronquées
+        df = gdf.drop(columns=["geometry"], errors="ignore")
         rename_map = {}
-        if "longueur_k" in gdf.columns:
+        if "longueur_k" in df.columns:
             rename_map["longueur_k"] = "longueur_km"
-        if "montant_re" in gdf.columns:
+        if "montant_re" in df.columns:
             rename_map["montant_re"] = "montant_redevance"
         if rename_map:
-            gdf = gdf.rename(columns=rename_map)
-        return gdf.drop(columns=["geometry"], errors="ignore")
+            df = df.rename(columns=rename_map)
+        return df
     except Exception as e:
         st.warning(f"Données RODP : {e}")
         return None
@@ -476,7 +478,7 @@ with st.sidebar:
     st.markdown('<div class="section-title">Couches</div>', unsafe_allow_html=True)
     show_pub  = st.checkbox("Voiries publiques",  value=True)
     show_priv = st.checkbox("Voiries privées",    value=True)
-    show_cad  = st.checkbox("Couche cadastrale",  value=True)
+    show_cad  = st.checkbox("Couche cadastrale",  value=False)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
     sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"])
@@ -811,6 +813,10 @@ with tab3:
 
     df_rodp = _df_rodp_preload
 
+    # Appliquer le filtre commune de la sidebar
+    if df_rodp is not None and sel_commune and "commune" in df_rodp.columns:
+        df_rodp = df_rodp[df_rodp["commune"].isin(sel_commune)].reset_index(drop=True)
+
     if df_rodp is None or len(df_rodp) == 0:
         st.info("Fichier result/troncons_classes_voiries.shp introuvable ou vide.")
     else:
@@ -946,6 +952,6 @@ with tab3:
         if "Long. (km)"   in disp_detail.columns: fmt["Long. (km)"]   = "{:,.4f}"
         if "Tarif (€/km)" in disp_detail.columns: fmt["Tarif (€/km)"] = "{:,.0f}"
         if "Montant (€)"  in disp_detail.columns: fmt["Montant (€)"]  = "{:,.4f}"
-        st.dataframe(disp_detail.style.format(fmt),
+        st.dataframe(disp_detail.style.format(fmt, na_rep="-"),
                      use_container_width=True, hide_index=True, height=380)
 
