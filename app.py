@@ -496,10 +496,8 @@ with st.sidebar:
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">Couches</div>', unsafe_allow_html=True)
-    show_pub     = st.checkbox("Voiries publiques",  value=True)
-    show_priv    = st.checkbox("Voiries privées",    value=True)
-    show_voiries = st.checkbox("Couche voiries",     value=True)
-    show_cad     = st.checkbox("Couche cadastrale",  value=False)
+    show_voiries = st.checkbox("Couche voiries",    value=True)
+    show_cad     = st.checkbox("Couche cadastrale", value=False)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
     sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"], label_visibility="collapsed")
@@ -595,9 +593,11 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 # FILTRES
 # ─────────────────────────────────────────────
+show_pub  = show_voiries
+show_priv = show_voiries
 fj_pub  = fast_filter_gj(gjs.get("pub_voiries"),  show_pub,  sel_dom, sel_sup, sel_commune)
 fj_priv = fast_filter_gj(gjs.get("priv_voiries"), show_priv, sel_dom, sel_sup, sel_commune)
-fj_cad  = gjs.get("cadastre") if show_cad else None   # pas de filtre supplémentaire sur cadastre
+fj_cad  = gjs.get("cadastre") if show_cad else None
 
 fd_pub  = fast_filter_df(dfs.get("pub_voiries"),  show_pub,  sel_dom, sel_sup, sel_commune)
 fd_priv = fast_filter_df(dfs.get("priv_voiries"), show_priv, sel_dom, sel_sup, sel_commune)
@@ -614,13 +614,12 @@ if len(_kpi_df) > 0:
     if sel_nature  and "NATURE"     in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["NATURE"].isin(sel_nature)]
     _kpi_df["longueur_km"] = pd.to_numeric(_kpi_df.get("longueur_km", 0), errors="coerce").fillna(0)
 
-_kpi_pub  = _kpi_df[_kpi_df["domaine"] == "Public"] if "domaine" in _kpi_df.columns else pd.DataFrame()
-_kpi_priv = _kpi_df[_kpi_df["domaine"] == "Privé"]  if "domaine" in _kpi_df.columns else pd.DataFrame()
-
-n_total = len(_kpi_df)
-n_pub   = len(_kpi_pub)
-n_priv  = len(_kpi_priv)
-km_pub  = _kpi_pub["longueur_km"].sum() if len(_kpi_pub) > 0 else 0.0
+_kpi_df["montant_redevance"] = pd.to_numeric(_kpi_df.get("montant_redevance", 0), errors="coerce").fillna(0)
+_gest_kpi    = _kpi_df.groupby("Gestionnai")["montant_redevance"].sum() if "Gestionnai" in _kpi_df.columns else pd.Series(dtype=float)
+montant_total = _kpi_df["montant_redevance"].sum()
+long_total_km = _kpi_df["longueur_km"].sum() if "longueur_km" in _kpi_df.columns else 0.0
+mont_dept     = _gest_kpi.get("Département", 0.0)
+mont_commune  = _gest_kpi.get("Commune",     0.0)
 
 # ─────────────────────────────────────────────
 # HEADER + KPIs
@@ -636,14 +635,14 @@ st.markdown("""
 
 st.markdown(f"""
 <div class="kpi-grid">
-  <div class="kpi-card total"><div class="kpi-label">Tronçons total</div>
-    <div class="kpi-value total">{n_total:,}</div><div class="kpi-sub">réseau FTTH qualifié</div></div>
-  <div class="kpi-card pub"><div class="kpi-label">Domaine public</div>
-    <div class="kpi-value pub">{n_pub:,}</div><div class="kpi-sub">tronçons soumis RODP</div></div>
-  <div class="kpi-card priv"><div class="kpi-label">Domaine privé</div>
-    <div class="kpi-value priv">{n_priv:,}</div><div class="kpi-sub">tronçons hors RODP</div></div>
-  <div class="kpi-card km"><div class="kpi-label">Longueur publique totale</div>
-    <div class="kpi-value km">{km_pub:,.3f} km</div><div class="kpi-sub">linéaire soumis à redevance</div></div>
+  <div class="kpi-card total"><div class="kpi-label">Montant RODP total</div>
+    <div class="kpi-value total">{montant_total:,.2f} €</div><div class="kpi-sub">toutes voiries confondues</div></div>
+  <div class="kpi-card km"><div class="kpi-label">Longueur classifiée</div>
+    <div class="kpi-value km">{long_total_km:,.3f} km</div><div class="kpi-sub">réseau fibre total</div></div>
+  <div class="kpi-card pub"><div class="kpi-label">Montant - Département</div>
+    <div class="kpi-value pub">{mont_dept:,.2f} €</div><div class="kpi-sub">voiries départementales</div></div>
+  <div class="kpi-card priv"><div class="kpi-label">Montant - Commune</div>
+    <div class="kpi-value priv">{mont_commune:,.2f} €</div><div class="kpi-sub">voiries communales</div></div>
 </div>""", unsafe_allow_html=True)
 
 # ── KPIs longueur par commune ─────────────────────────────────────────────
@@ -803,17 +802,16 @@ if show_voiries:
     add_voiries_layer(_gj_voiries, sel_gest, sel_nature)
 add_network_layer(fj_pub,  "Voiries publiques", "#00aaff")
 add_network_layer(fj_priv, "Voiries privées",   "#ff8800")
-folium.LayerControl(collapsed=False).add_to(m)
 
 st_folium(m, height=640, use_container_width=True, returned_objects=[])
 
 # ─────────────────────────────────────────────
 # ONGLETS
 # ─────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs([
+tab3, tab1, tab2 = st.tabs([
+    "  Redevance RODP",
     "  Détail tronçons",
     "  Répartition par support",
-    "  Redevance RODP",
 ])
 
 # ── Onglet 1 : Détail tronçons ───────────────────────────────────────────
@@ -898,39 +896,6 @@ with tab3:
 
         df_rodp["longueur_km"]       = pd.to_numeric(df_rodp.get("longueur_km",       pd.Series(dtype=float)), errors="coerce").fillna(0)
         df_rodp["montant_redevance"] = pd.to_numeric(df_rodp.get("montant_redevance", pd.Series(dtype=float)), errors="coerce").fillna(0)
-
-        montant_total = df_rodp["montant_redevance"].sum()
-        long_total_km = df_rodp["longueur_km"].sum()
-
-        # Montants par gestionnaire (hors Inconnu = hors voirie)
-        _gest = df_rodp.groupby("Gestionnai")["montant_redevance"].sum()
-        mont_dept    = _gest.get("Département", 0.0)
-        mont_commune = _gest.get("Commune",     0.0)
-
-        # ── KPIs ─────────────────────────────────────────────────────────
-        st.markdown(f"""
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;">
-          <div class="kpi-card total">
-            <div class="kpi-label">Montant RODP total</div>
-            <div class="kpi-value total" style="font-size:22px;">{montant_total:,.2f} €</div>
-            <div class="kpi-sub">toutes voiries confondues</div>
-          </div>
-          <div class="kpi-card km">
-            <div class="kpi-label">Longueur classifiée</div>
-            <div class="kpi-value km" style="font-size:22px;">{long_total_km:,.3f} km</div>
-            <div class="kpi-sub">réseau fibre total</div>
-          </div>
-          <div class="kpi-card pub">
-            <div class="kpi-label">Montant - Département</div>
-            <div class="kpi-value pub" style="font-size:22px;">{mont_dept:,.2f} €</div>
-            <div class="kpi-sub">voiries départementales</div>
-          </div>
-          <div class="kpi-card priv">
-            <div class="kpi-label">Montant - Commune</div>
-            <div class="kpi-value priv" style="font-size:22px;">{mont_commune:,.2f} €</div>
-            <div class="kpi-sub">voiries communales</div>
-          </div>
-        </div>""", unsafe_allow_html=True)
 
         # ── Rappel réglementaire ─────────────────────────────────────────
         st.markdown("""
