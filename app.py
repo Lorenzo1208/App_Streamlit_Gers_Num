@@ -502,29 +502,29 @@ with st.sidebar:
     show_cad     = st.checkbox("Couche cadastrale",  value=False)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
-    sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"])
+    sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"], label_visibility="collapsed")
 
     st.markdown('<div class="section-title">Type de support</div>', unsafe_allow_html=True)
     all_sup = sorted(all_df["cm_support"].dropna().unique().tolist()) if "cm_support" in all_df.columns else list(SUPPORT_COLORS)
-    sel_sup = st.multiselect("Support réseau", all_sup, default=all_sup, placeholder="Tous…")
+    sel_sup = st.multiselect("Support réseau", all_sup, default=all_sup, placeholder="Tous…", label_visibility="collapsed")
     if not sel_sup:
         sel_sup = all_sup
 
     st.markdown('<div class="section-title">Commune</div>', unsafe_allow_html=True)
     communes = sorted(all_df["commune"].dropna().unique().tolist()) if "commune" in all_df.columns else []
-    sel_commune = st.multiselect("Commune", communes, default=communes, placeholder="Toutes…")
+    sel_commune = st.multiselect("Commune", communes, default=communes, placeholder="Toutes…", label_visibility="collapsed")
     if not sel_commune:
         sel_commune = communes
 
     st.markdown('<div class="section-title">Gestionnaire</div>', unsafe_allow_html=True)
     all_gest = sorted(_df_rodp_preload["Gestionnai"].dropna().unique().tolist()) if _df_rodp_preload is not None and "Gestionnai" in _df_rodp_preload.columns else []
-    sel_gest = st.multiselect("Gestionnaire", all_gest, default=all_gest, placeholder="Tous…")
+    sel_gest = st.multiselect("Gestionnaire", all_gest, default=all_gest, placeholder="Tous…", label_visibility="collapsed")
     if not sel_gest:
         sel_gest = all_gest
 
     st.markdown('<div class="section-title">Nature de voirie</div>', unsafe_allow_html=True)
     all_nature = sorted(_df_rodp_preload["NATURE"].dropna().unique().tolist()) if _df_rodp_preload is not None and "NATURE" in _df_rodp_preload.columns else []
-    sel_nature = st.multiselect("Nature voirie", all_nature, default=all_nature, placeholder="Toutes…")
+    sel_nature = st.multiselect("Nature de voirie", all_nature, default=all_nature, placeholder="Toutes…", label_visibility="collapsed")
     if not sel_nature:
         sel_nature = all_nature
 
