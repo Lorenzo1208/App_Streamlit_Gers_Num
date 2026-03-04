@@ -397,6 +397,20 @@ def _demo():
 # ─────────────────────────────────────────────
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
+@st.cache_data(show_spinner="Chargement couche voiries…")
+def load_voiries_gj():
+    path = os.path.join(_APP_DIR, "Couche_voiries", "voiries_clean.shp")
+    if not os.path.exists(path):
+        return None
+    try:
+        gdf = gpd.read_file(path)
+        if gdf.crs and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf["geometry"] = gdf["geometry"].simplify(0.00005, preserve_topology=True)
+        return gdf[["NATURE", "Gestionnai", "geometry"]].__geo_interface__
+    except Exception as e:
+        return None
+
 @st.cache_data(show_spinner="Chargement des données RODP…")
 def load_rodp_data():
     """
@@ -432,6 +446,12 @@ if demo_mode:
 
 all_df = pd.concat([dfs.get("pub_voiries",  pd.DataFrame()),
                     dfs.get("priv_voiries", pd.DataFrame())], ignore_index=True)
+
+# ─────────────────────────────────────────────
+# DONNÉES RODP + VOIRIES (avant sidebar pour alimenter les filtres)
+# ─────────────────────────────────────────────
+_df_rodp_preload = load_rodp_data()
+_gj_voiries      = load_voiries_gj()
 
 # ─────────────────────────────────────────────
 # FILTRAGE RAPIDE
@@ -476,9 +496,10 @@ with st.sidebar:
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">Couches</div>', unsafe_allow_html=True)
-    show_pub  = st.checkbox("Voiries publiques",  value=True)
-    show_priv = st.checkbox("Voiries privées",    value=True)
-    show_cad  = st.checkbox("Couche cadastrale",  value=False)
+    show_pub     = st.checkbox("Voiries publiques",  value=True)
+    show_priv    = st.checkbox("Voiries privées",    value=True)
+    show_voiries = st.checkbox("Couche voiries",     value=True)
+    show_cad     = st.checkbox("Couche cadastrale",  value=False)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
     sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"])
@@ -494,6 +515,18 @@ with st.sidebar:
     sel_commune = st.multiselect("Commune", communes, default=communes, placeholder="Toutes…")
     if not sel_commune:
         sel_commune = communes
+
+    st.markdown('<div class="section-title">Gestionnaire</div>', unsafe_allow_html=True)
+    all_gest = sorted(_df_rodp_preload["Gestionnai"].dropna().unique().tolist()) if _df_rodp_preload is not None and "Gestionnai" in _df_rodp_preload.columns else []
+    sel_gest = st.multiselect("Gestionnaire", all_gest, default=all_gest, placeholder="Tous…")
+    if not sel_gest:
+        sel_gest = all_gest
+
+    st.markdown('<div class="section-title">Nature de voirie</div>', unsafe_allow_html=True)
+    all_nature = sorted(_df_rodp_preload["NATURE"].dropna().unique().tolist()) if _df_rodp_preload is not None and "NATURE" in _df_rodp_preload.columns else []
+    sel_nature = st.multiselect("Nature voirie", all_nature, default=all_nature, placeholder="Toutes…")
+    if not sel_nature:
+        sel_nature = all_nature
 
     st.markdown('<div class="section-title">Légende supports</div>', unsafe_allow_html=True)
     # Afficher uniquement les supports présents dans les données
@@ -570,21 +603,24 @@ fd_pub  = fast_filter_df(dfs.get("pub_voiries"),  show_pub,  sel_dom, sel_sup, s
 fd_priv = fast_filter_df(dfs.get("priv_voiries"), show_priv, sel_dom, sel_sup, sel_commune)
 
 # ─────────────────────────────────────────────
-# MÉTRIQUES
+# MÉTRIQUES (depuis données RODP + filtres sidebar)
 # ─────────────────────────────────────────────
-n_pub   = len(fj_pub["features"])  if fj_pub  else 0
-n_priv  = len(fj_priv["features"]) if fj_priv else 0
-n_total = n_pub + n_priv
+_kpi_df = _df_rodp_preload.copy() if _df_rodp_preload is not None else pd.DataFrame()
+if len(_kpi_df) > 0:
+    if sel_commune and "commune"    in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["commune"].isin(sel_commune)]
+    if sel_dom     and "domaine"    in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["domaine"].isin(sel_dom)]
+    if sel_sup     and "cm_support" in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["cm_support"].isin(sel_sup)]
+    if sel_gest    and "Gestionnai" in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["Gestionnai"].isin(sel_gest)]
+    if sel_nature  and "NATURE"     in _kpi_df.columns: _kpi_df = _kpi_df[_kpi_df["NATURE"].isin(sel_nature)]
+    _kpi_df["longueur_km"] = pd.to_numeric(_kpi_df.get("longueur_km", 0), errors="coerce").fillna(0)
 
+_kpi_pub  = _kpi_df[_kpi_df["domaine"] == "Public"] if "domaine" in _kpi_df.columns else pd.DataFrame()
+_kpi_priv = _kpi_df[_kpi_df["domaine"] == "Privé"]  if "domaine" in _kpi_df.columns else pd.DataFrame()
 
-def _sum_length(df):
-    if df is not None and len(df) > 0 and "longueur" in df.columns:
-        return pd.to_numeric(df["longueur"], errors="coerce").sum()
-    return 0.0
-
-
-km_pub  = _sum_length(fd_pub)
-km_priv = _sum_length(fd_priv)
+n_total = len(_kpi_df)
+n_pub   = len(_kpi_pub)
+n_priv  = len(_kpi_priv)
+km_pub  = _kpi_pub["longueur_km"].sum() if len(_kpi_pub) > 0 else 0.0
 
 # ─────────────────────────────────────────────
 # HEADER + KPIs
@@ -607,7 +643,7 @@ st.markdown(f"""
   <div class="kpi-card priv"><div class="kpi-label">Domaine privé</div>
     <div class="kpi-value priv">{n_priv:,}</div><div class="kpi-sub">tronçons hors RODP</div></div>
   <div class="kpi-card km"><div class="kpi-label">Longueur publique totale</div>
-    <div class="kpi-value km">{km_pub:,.0f} m</div><div class="kpi-sub">linéaire soumis à redevance</div></div>
+    <div class="kpi-value km">{km_pub:,.3f} km</div><div class="kpi-sub">linéaire soumis à redevance</div></div>
 </div>""", unsafe_allow_html=True)
 
 # ── KPIs longueur par commune ─────────────────────────────────────────────
@@ -704,6 +740,39 @@ def add_network_layer(gj, name, default_color):
     ).add_to(m)
 
 
+GEST_COLORS = {
+    "Département": "#00aaff",
+    "Commune":     "#44dd88",
+}
+
+def add_voiries_layer(gj, sel_gest, sel_nature):
+    if not gj or not gj["features"]:
+        return
+    gest_set   = set(sel_gest)
+    nature_set = set(sel_nature)
+    feats = [f for f in gj["features"]
+             if (not gest_set   or f["properties"].get("Gestionnai") in gest_set)
+             and (not nature_set or f["properties"].get("NATURE")     in nature_set)]
+    if not feats:
+        return
+    filtered_gj = {"type": "FeatureCollection", "features": feats}
+    GeoJson(
+        filtered_gj, name="Couche voiries",
+        style_function=lambda f: {
+            "fillColor":   GEST_COLORS.get(f["properties"].get("Gestionnai"), "#aaaaaa"),
+            "color":       GEST_COLORS.get(f["properties"].get("Gestionnai"), "#888888"),
+            "weight":      1,
+            "fillOpacity": 0.25,
+            "opacity":     0.6,
+        },
+        tooltip=GeoJsonTooltip(
+            fields=["NATURE", "Gestionnai"],
+            aliases=["Nature :", "Gestionnaire :"],
+            localize=True, sticky=False, labels=True, style=TT_STYLE
+        ),
+    ).add_to(m)
+
+
 def add_cadastre_layer(gj):
     if not gj or not gj["features"]:
         return
@@ -728,18 +797,15 @@ def add_cadastre_layer(gj):
     ).add_to(m)
 
 
-# Cadastre en premier (fond) puis les réseaux par-dessus
+# Ordre : cadastre → voiries → fibre (par-dessus)
 add_cadastre_layer(fj_cad)
+if show_voiries:
+    add_voiries_layer(_gj_voiries, sel_gest, sel_nature)
 add_network_layer(fj_pub,  "Voiries publiques", "#00aaff")
 add_network_layer(fj_priv, "Voiries privées",   "#ff8800")
 folium.LayerControl(collapsed=False).add_to(m)
 
 st_folium(m, height=640, use_container_width=True, returned_objects=[])
-
-# ─────────────────────────────────────────────
-# DONNÉES RODP (chargé avant les tabs pour éviter double rendu)
-# ─────────────────────────────────────────────
-_df_rodp_preload = load_rodp_data()
 
 # ─────────────────────────────────────────────
 # ONGLETS
@@ -813,9 +879,14 @@ with tab3:
 
     df_rodp = _df_rodp_preload
 
-    # Appliquer le filtre commune de la sidebar
-    if df_rodp is not None and sel_commune and "commune" in df_rodp.columns:
-        df_rodp = df_rodp[df_rodp["commune"].isin(sel_commune)].reset_index(drop=True)
+    # Appliquer tous les filtres de la sidebar
+    if df_rodp is not None:
+        if sel_commune and "commune"    in df_rodp.columns: df_rodp = df_rodp[df_rodp["commune"].isin(sel_commune)]
+        if sel_dom     and "domaine"    in df_rodp.columns: df_rodp = df_rodp[df_rodp["domaine"].isin(sel_dom)]
+        if sel_sup     and "cm_support" in df_rodp.columns: df_rodp = df_rodp[df_rodp["cm_support"].isin(sel_sup)]
+        if sel_gest    and "Gestionnai" in df_rodp.columns: df_rodp = df_rodp[df_rodp["Gestionnai"].isin(sel_gest)]
+        if sel_nature  and "NATURE"     in df_rodp.columns: df_rodp = df_rodp[df_rodp["NATURE"].isin(sel_nature)]
+        df_rodp = df_rodp.reset_index(drop=True)
 
     if df_rodp is None or len(df_rodp) == 0:
         st.info("Fichier result/troncons_classes_voiries.shp introuvable ou vide.")
