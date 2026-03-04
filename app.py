@@ -11,7 +11,7 @@ import plotly.express as px
 # CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="SIG RODP – Gers Numérique",
+    page_title="SIG RODP - Gers Numérique",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -324,7 +324,7 @@ def _load_shp(path, default_domaine, commune_name):
         if len(g) == 0:
             return None
         # Calculer la longueur réelle depuis la géométrie en Lambert-93
-        # AVANT la reprojection — c'est la valeur correcte pour la RODP
+        # AVANT la reprojection - c'est la valeur correcte pour la RODP
         # (cm_long hérite de la longueur du tronçon parent avant découpe cadastrale → incorrect)
         if g.crs and g.crs.to_epsg() == 2154:
             g["longueur"] = g.geometry.length.round(2)
@@ -393,6 +393,34 @@ def _demo():
 
 
 # ─────────────────────────────────────────────
+# CHARGEMENT DONNÉES RODP (classification voiries)
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner="Chargement des données RODP…")
+def load_rodp_data():
+    """
+    Charge le shapefile résultat de la classification par voiries.
+    Corrige les noms de colonnes tronqués par ESRI Shapefile (>10 chars).
+    """
+    path = os.path.join("result", "troncons_classes_voiries.shp")
+    if not os.path.exists(path):
+        return None
+    try:
+        gdf = gpd.read_file(path)
+        # Renommer les colonnes tronquées
+        rename_map = {}
+        if "longueur_k" in gdf.columns:
+            rename_map["longueur_k"] = "longueur_km"
+        if "montant_re" in gdf.columns:
+            rename_map["montant_re"] = "montant_redevance"
+        if rename_map:
+            gdf = gdf.rename(columns=rename_map)
+        return gdf.drop(columns=["geometry"], errors="ignore")
+    except Exception as e:
+        st.warning(f"Données RODP : {e}")
+        return None
+
+
+# ─────────────────────────────────────────────
 # CHARGEMENT
 # ─────────────────────────────────────────────
 gdfs, gjs, dfs = load_all()
@@ -448,7 +476,7 @@ with st.sidebar:
     st.markdown('<div class="section-title">Couches</div>', unsafe_allow_html=True)
     show_pub  = st.checkbox("Voiries publiques",  value=True)
     show_priv = st.checkbox("Voiries privées",    value=True)
-    show_cad  = st.checkbox("Couche cadastrale",  value=False)
+    show_cad  = st.checkbox("Couche cadastrale",  value=True)
 
     st.markdown('<div class="section-title">Domaine</div>', unsafe_allow_html=True)
     sel_dom = st.multiselect("Domaine", ["Public", "Privé"], default=["Public", "Privé"])
@@ -493,7 +521,7 @@ with st.sidebar:
                 f'''<div style="background:#0d1a2e;border:1px solid {color}33;border-left:3px solid {color};
                 border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
                 <span style="color:{color};font-weight:700;">{label}</span>
-                <span style="color:#5a7fa8;"> · {n:,} tronçons</span><br>
+                <span style="color:#5a7fa8;"> - {n:,} tronçons</span><br>
                 <span style="color:#3d6e9e;">{comm_str}</span>{tc_str}
                 </div>''', unsafe_allow_html=True)
         else:
@@ -501,7 +529,7 @@ with st.sidebar:
                 f'''<div style="background:#1a0d0d;border:1px solid #3a1e1e;border-left:3px solid #553333;
                 border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
                 <span style="color:#664444;font-weight:700;">{label}</span>
-                <span style="color:#443333;"> · non chargé</span>
+                <span style="color:#443333;"> - non chargé</span>
                 </div>''', unsafe_allow_html=True)
 
     _info("pub_voiries",  " Public", "#00aaff")
@@ -512,13 +540,13 @@ with st.sidebar:
         st.markdown(f'''<div style="background:#0d1a2e;border:1px solid #44ff8833;border-left:3px solid #44ff88;
             border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
             <span style="color:#44ff88;font-weight:700;"> Cadastre</span>
-            <span style="color:#5a7fa8;"> · {len(gdf_cad):,} parcelles</span>
+            <span style="color:#5a7fa8;"> - {len(gdf_cad):,} parcelles</span>
             </div>''', unsafe_allow_html=True)
     else:
         st.markdown('''<div style="background:#1a0d0d;border:1px solid #3a1e1e;border-left:3px solid #553333;
             border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
             <span style="color:#664444;font-weight:700;"> Cadastre</span>
-            <span style="color:#443333;"> · non chargé</span>
+            <span style="color:#443333;"> - non chargé</span>
             </div>''', unsafe_allow_html=True)
 
     if demo_mode:
@@ -562,8 +590,8 @@ km_priv = _sum_length(fd_priv)
 st.markdown("""
 <div class="header-banner">
     <div>
-        <div class="header-title">Classification RODP – Réseau FTTH</div>
-        <div class="header-sub">Redevance d'Occupation du Domaine Public · Département du Gers · Classification par cadastres</div>
+        <div class="header-title">Classification RODP - Réseau FTTH</div>
+        <div class="header-sub">Redevance d'Occupation du Domaine Public - Département du Gers - Classification par cadastres</div>
     </div>
     <div class="header-badge">Gers Numérique</div>
 </div>""", unsafe_allow_html=True)
@@ -591,7 +619,7 @@ st.markdown(f"""
 #         _cards = ""
 #         for _com in _communes_actives:
 #             _km = _len_par_comune = _len_par_commune.get(_com, 0)
-#             _cards += f'''<div class="kpi-card km"><div class="kpi-label">Long. publique · {_com}</div>
+#             _cards += f'''<div class="kpi-card km"><div class="kpi-label">Long. publique - {_com}</div>
 #               <div class="kpi-value km" style="font-size:20px;">{_km:,.0f} m</div>
 #               <div class="kpi-sub">{_km/1000:.2f} km</div></div>'''
 #         _ncols = len(_communes_actives)
@@ -707,12 +735,17 @@ folium.LayerControl(collapsed=False).add_to(m)
 st_folium(m, height=640, use_container_width=True, returned_objects=[])
 
 # ─────────────────────────────────────────────
+# DONNÉES RODP (chargé avant les tabs pour éviter double rendu)
+# ─────────────────────────────────────────────
+_df_rodp_preload = load_rodp_data()
+
+# ─────────────────────────────────────────────
 # ONGLETS
 # ─────────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs([
     "  Détail tronçons",
     "  Répartition par support",
-    "  Simulateur RODP",
+    "  Redevance RODP",
 ])
 
 # ── Onglet 1 : Détail tronçons ───────────────────────────────────────────
@@ -771,82 +804,148 @@ with tab2:
     else:
         st.info("Pas de données à afficher")
 
-# ── Onglet 3 : Simulateur RODP ───────────────────────────────────────────
+# ── Onglet 3 : Redevance RODP ────────────────────────────────────────────
 with tab3:
-    st.markdown('<div class="section-title">Simulateur de Redevance d\'Occupation du Domaine Public</div>',
+    st.markdown('<div class="section-title">Redevance d\'Occupation du Domaine Public - Classification par voiries</div>',
                 unsafe_allow_html=True)
 
-    # ── Rappel réglementaire ─────────────────────────────────────────────
-    col_tarif, col_info = st.columns([1, 2])
-    with col_tarif:
-        tarif_rodp = st.number_input(
-            "Tarif RODP (€/m/an)",
-            min_value=0.0, max_value=10.0, value=0.040, step=0.001, format="%.4f",
-            help="Tarif fixé par délibération communale · Art. R.20-52 CPCE · base légale : 40 €/km/an"
-        )
-    with col_info:
-        st.markdown("""
-        <div style="background:#0d1a2e;border:1px solid #1e3a5f;border-radius:8px;
-                    padding:12px 16px;margin-top:4px;font-size:12px;color:#9bb5cf;">
-            <b style="color:#5bc4ff;"> Rappel réglementaire</b><br>
-            La RODP est calculée sur la longueur de réseau en <b>domaine public</b> uniquement.
-            Le tarif est fixé par délibération communale, dans le strict respect des plafonds légaux
-            prévus à l'<b>article R. 20-52 du Code des postes et des communications électroniques</b>,
-            actualisés au 1<sup>er</sup> janvier de chaque année selon l'index des travaux publics (TP01).
+    df_rodp = _df_rodp_preload
+
+    if df_rodp is None or len(df_rodp) == 0:
+        st.info("Fichier result/troncons_classes_voiries.shp introuvable ou vide.")
+    else:
+        # ── Normalisation colonnes ────────────────────────────────────────
+        for _old, _new in [("longueur_k", "longueur_km"), ("montant_re", "montant_redevance")]:
+            if _old in df_rodp.columns and _new not in df_rodp.columns:
+                df_rodp = df_rodp.rename(columns={_old: _new})
+
+        df_rodp["longueur_km"]       = pd.to_numeric(df_rodp.get("longueur_km",       pd.Series(dtype=float)), errors="coerce").fillna(0)
+        df_rodp["montant_redevance"] = pd.to_numeric(df_rodp.get("montant_redevance", pd.Series(dtype=float)), errors="coerce").fillna(0)
+
+        montant_total = df_rodp["montant_redevance"].sum()
+        long_total_km = df_rodp["longueur_km"].sum()
+
+        # Montants par gestionnaire (hors Inconnu = hors voirie)
+        _gest = df_rodp.groupby("Gestionnai")["montant_redevance"].sum()
+        mont_dept    = _gest.get("Département", 0.0)
+        mont_commune = _gest.get("Commune",     0.0)
+
+        # ── KPIs ─────────────────────────────────────────────────────────
+        st.markdown(f"""
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;">
+          <div class="kpi-card total">
+            <div class="kpi-label">Montant RODP total</div>
+            <div class="kpi-value total" style="font-size:22px;">{montant_total:,.2f} €</div>
+            <div class="kpi-sub">toutes voiries confondues</div>
+          </div>
+          <div class="kpi-card km">
+            <div class="kpi-label">Longueur classifiée</div>
+            <div class="kpi-value km" style="font-size:22px;">{long_total_km:,.3f} km</div>
+            <div class="kpi-sub">réseau fibre total</div>
+          </div>
+          <div class="kpi-card pub">
+            <div class="kpi-label">Montant - Département</div>
+            <div class="kpi-value pub" style="font-size:22px;">{mont_dept:,.2f} €</div>
+            <div class="kpi-sub">voiries départementales</div>
+          </div>
+          <div class="kpi-card priv">
+            <div class="kpi-label">Montant - Commune</div>
+            <div class="kpi-value priv" style="font-size:22px;">{mont_commune:,.2f} €</div>
+            <div class="kpi-sub">voiries communales</div>
+          </div>
         </div>""", unsafe_allow_html=True)
 
-    df_pub_r = dfs.get("pub_voiries", pd.DataFrame())
+        # ── Rappel réglementaire ─────────────────────────────────────────
+        st.markdown("""
+        <div style="background:#0d1a2e;border:1px solid #1e3a5f;border-radius:8px;
+                    padding:12px 16px;margin-bottom:16px;font-size:12px;color:#9bb5cf;">
+            <b style="color:#5bc4ff;"> Rappel réglementaire</b><br>
+            La RODP est calculée sur la longueur de réseau en <b>domaine public</b>.
+            Tarifs appliqués : <b>40 €/km/an</b> (aérien, aéro-souterrain, façade) -
+            <b>30 €/km/an</b> (souterrain). Conformément à l'<b>article R. 20-52 du CPCE</b>,
+            actualisés au 1<sup>er</sup> janvier selon l'index TP01.
+        </div>""", unsafe_allow_html=True)
 
-    if len(df_pub_r) > 0 and "commune" in df_pub_r.columns:
-        _lr = df_pub_r[["commune"]].copy().reset_index(drop=True)
-        _lr["_len"] = pd.to_numeric(df_pub_r["longueur"], errors="coerce").fillna(0).values
+        col_left, col_right = st.columns(2)
 
-        by_c = _lr.groupby("commune")["_len"].sum().reset_index()
-        by_c.columns = ["Commune", "Longueur pub (m)"]
-        by_c["Longueur pub (km)"]   = (by_c["Longueur pub (m)"] / 1000).round(3)
-        by_c["Montant annuel (€)"]  = (by_c["Longueur pub (m)"] * tarif_rodp).round(2)
-        by_c["Longueur pub (m)"]    = by_c["Longueur pub (m)"].round(1)
+        # ── Synthèse par gestionnaire ─────────────────────────────────────
+        with col_left:
+            st.markdown('<div class="section-title">Par gestionnaire</div>', unsafe_allow_html=True)
+            tbl_gest = (
+                df_rodp.groupby("Gestionnai", dropna=False)
+                .agg(nb_troncons=("cm_long", "count"),
+                     longueur_km=("longueur_km", "sum"),
+                     montant=("montant_redevance", "sum"))
+                .round({"longueur_km": 3, "montant": 2})
+                .sort_values("montant", ascending=False)
+                .reset_index()
+                .rename(columns={"Gestionnai": "Gestionnaire",
+                                  "nb_troncons": "Tronçons",
+                                  "longueur_km": "Long. (km)",
+                                  "montant":     "Montant (€)"})
+            )
+            st.dataframe(tbl_gest.style.format({"Long. (km)": "{:,.3f}", "Montant (€)": "{:,.2f}"}),
+                         use_container_width=True, hide_index=True, height=220)
 
-        tot = pd.DataFrame([{
-            "Commune":            " TOTAL",
-            "Longueur pub (m)":   round(float(by_c["Longueur pub (m)"].sum()), 1),
-            "Longueur pub (km)":  round(float(by_c["Longueur pub (km)"].sum()), 3),
-            "Montant annuel (€)": round(float(by_c["Montant annuel (€)"].sum()), 2),
-        }])
-        by_c_disp = pd.concat([by_c, tot], ignore_index=True)
-        st.dataframe(
-            by_c_disp.style.format({
-                "Longueur pub (m)":   "{:,.1f}",
-                "Longueur pub (km)":  "{:,.3f}",
-                "Montant annuel (€)": "{:,.2f} €",
-            }),
-            use_container_width=True, hide_index=True, height=200
+        # ── Synthèse par nature de voirie ─────────────────────────────────
+        with col_right:
+            st.markdown('<div class="section-title">Par nature de voirie</div>', unsafe_allow_html=True)
+            tbl_nat = (
+                df_rodp.groupby("NATURE", dropna=False)
+                .agg(nb_troncons=("cm_long", "count"),
+                     longueur_km=("longueur_km", "sum"),
+                     montant=("montant_redevance", "sum"))
+                .round({"longueur_km": 3, "montant": 2})
+                .sort_values("montant", ascending=False)
+                .reset_index()
+                .rename(columns={"NATURE":      "Nature voirie",
+                                  "nb_troncons": "Tronçons",
+                                  "longueur_km": "Long. (km)",
+                                  "montant":     "Montant (€)"})
+            )
+            st.dataframe(tbl_nat.style.format({"Long. (km)": "{:,.3f}", "Montant (€)": "{:,.2f}"}),
+                         use_container_width=True, hide_index=True, height=220)
+
+        # ── Graphique montant par gestionnaire ────────────────────────────
+        st.markdown('<div class="section-title">Montant RODP par gestionnaire</div>', unsafe_allow_html=True)
+        fig_gest = px.bar(
+            tbl_gest, x="Gestionnaire", y="Montant (€)",
+            color="Gestionnaire", text="Montant (€)",
+            color_discrete_sequence=["#00aaff", "#ff8800", "#6e40c9"],
+            labels={"Montant (€)": "Montant (€)"},
         )
-        total_m   = float(by_c["Longueur pub (m)"].sum())
-        total_eur = float(by_c["Montant annuel (€)"].sum())
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Longueur publique totale", f"{total_m:,.0f} m")
-        c2.metric("Montant RODP annuel total", f"{total_eur:,.0f} €")
-        c3.metric("Tarif appliqué", f"{tarif_rodp:.4f} €/m/an")
+        _ymax = tbl_gest["Montant (€)"].max() * 1.45 if len(tbl_gest) > 0 else 100
+        fig_gest.update_traces(texttemplate="%{text:,.2f} €", textposition="outside")
+        fig_gest.update_layout(
+            paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1220", font_color="#9bb5cf",
+            font_family="DM Sans", showlegend=False,
+            xaxis=dict(gridcolor="#1a2a3e"),
+            yaxis=dict(gridcolor="#1a2a3e", range=[0, _ymax]),
+            margin=dict(l=0, r=0, t=20, b=20), height=300,
+        )
+        st.plotly_chart(fig_gest, use_container_width=True)
 
-        if len(by_c) > 0:
-            fig_rodp = px.bar(
-                by_c, x="Commune", y="Montant annuel (€)",
-                color="Commune", text="Montant annuel (€)",
-                labels={"Montant annuel (€)": "Montant (€)"},
-                title="Montant RODP annuel par commune"
-            )
-            fig_rodp.update_traces(texttemplate="%{text:,.0f} €", textposition="outside")
-            fig_rodp.update_layout(
-                paper_bgcolor="#0a0e1a", plot_bgcolor="#0d1220", font_color="#9bb5cf",
-                font_family="DM Sans", showlegend=False, title_font_color="#e8edf5",
-                xaxis=dict(gridcolor="#1a2a3e"),
-                yaxis=dict(gridcolor="#1a2a3e"),
-                margin=dict(l=0, r=0, t=40, b=20), height=300,
-            )
-            st.plotly_chart(fig_rodp, use_container_width=True)
-    elif len(df_pub_r) > 0:
-        st.warning(" La colonne 'commune' est absente des données publiques.")
-    else:
-        st.info("Aucun tronçon public chargé.")
+        # ── Tableau détaillé ──────────────────────────────────────────────
+        st.markdown('<div class="section-title">Détail des tronçons classifiés</div>', unsafe_allow_html=True)
+        cols_detail = [c for c in ["commune", "domaine", "cm_support", "NATURE", "Gestionnai",
+                                    "longueur_km", "tarif_km", "montant_redevance"]
+                       if c in df_rodp.columns]
+        disp_detail = df_rodp[cols_detail].copy()
+        rename_detail = {
+            "commune":           "Commune",
+            "domaine":           "Domaine",
+            "cm_support":        "Support",
+            "NATURE":            "Nature voirie",
+            "Gestionnai":        "Gestionnaire",
+            "longueur_km":       "Long. (km)",
+            "tarif_km":          "Tarif (€/km)",
+            "montant_redevance": "Montant (€)",
+        }
+        disp_detail.rename(columns=rename_detail, inplace=True)
+        fmt = {}
+        if "Long. (km)"   in disp_detail.columns: fmt["Long. (km)"]   = "{:,.4f}"
+        if "Tarif (€/km)" in disp_detail.columns: fmt["Tarif (€/km)"] = "{:,.0f}"
+        if "Montant (€)"  in disp_detail.columns: fmt["Montant (€)"]  = "{:,.4f}"
+        st.dataframe(disp_detail.style.format(fmt),
+                     use_container_width=True, hide_index=True, height=380)
 
